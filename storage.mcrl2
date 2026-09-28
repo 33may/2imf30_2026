@@ -1,0 +1,80 @@
+map numFloors, numSpots : Pos;     % Pos, not Nat: div/mod need a positive divisor
+    numSlots : Nat;
+eqn numFloors = 3; numSpots = 2; numSlots = numFloors * numSpots;
+
+sort Item = struct hasItem | noItem;
+     
+     Slot = struct slot(fl: Nat, spot: Nat);   % ticket = location (floor, spot); the KEY, carries no state
+     SlotState = struct free | pending | stored;
+     Storage = Slot -> SlotState;            % state of every slot; init = lambda s: Slot . free
+
+% ---------------------------------------------------------------
+% Storage data (inside the Brain)
+%   free : nothing there, nothing promised
+%   pending : ticket issued (putLabel), picker has not placed yet
+%   stored : item physically in the slot
+%   slotAt(i)  : the i-th slot in walk order
+%   chooseSlot : first free slot in walk order (only valid if !isFull)
+% ---------------------------------------------------------------
+map slotAt        : Nat -> Slot;
+    countFree     : Storage # Nat -> Nat;
+    isFull        : Storage -> Bool;
+    firstFreeFrom : Storage # Nat -> Slot;
+    chooseSlot    : Storage -> Slot;
+var i: Nat; st: Storage;
+eqn slotAt(i) = slot(i div numSpots, i mod numSpots);        % floor-major: fill floor 0 first
+
+    i == numSlots -> countFree(st, i) = 0;                    % (a map constant is not a pattern: guard it)
+    i <  numSlots -> countFree(st, i) = if(st(slotAt(i)) == free, 1, 0) + countFree(st, i + 1);
+
+    isFull(st) = countFree(st, 0) == 0;
+
+    i <  numSlots -> firstFreeFrom(st, i) = if(st(slotAt(i)) == free, slotAt(i), firstFreeFrom(st, i + 1));
+    chooseSlot(st) = firstFreeFrom(st, 0);
+
+% ---------------------------------------------------------------
+% 5.1 Lift component
+% ---------------------------------------------------------------
+act pickUpItem, dropOffItem : Nat;
+    moveToFloor : Nat # Nat;
+
+proc Lift(F: Nat, I: Item, N: Nat) =
+       pickUpItem(N) . Lift(F, hasItem, N) +
+       dropOffItem(N) . Lift(F, noItem, N) +
+       sum f: Nat . (f > 0 && f < numFloors && f != F)
+         -> moveToFloor(f, N) . Lift(f, I, N);
+
+% ---------------------------------------------------------------
+% 5.2 Emergency and Start button component
+% ---------------------------------------------------------------
+act triggerEmergency, resetEmergency, startPress;
+
+proc EmergencyButton = triggerEmergency . resetEmergency . EmergencyButton;
+     StartButton     = startPress . StartButton;
+
+% ---------------------------------------------------------------
+% 5.3 Input and output buffers  (environment: box sensors)
+%   itemInUser  / itemOutUser : sensor sees the user put in / take out
+%   itemOutLift / itemInLift  : sensor sees the lift take out / put in
+%   send*BoxStatus(I)          : the controller polls the sensor (crossing-style)
+% ---------------------------------------------------------------
+act itemInUser, itemInLift, itemOutLift, itemOutUser;
+    sendInBoxStatus,  recvInBoxStatus,  inBoxStatus  : Item;
+    sendOutBoxStatus, recvOutBoxStatus, outBoxStatus : Item;
+
+proc InputBuffer(I: Item) =
+       (I == noItem)  -> itemInUser  . InputBuffer(hasItem)
+     + (I == hasItem) -> itemOutLift . InputBuffer(noItem)
+     + sendInBoxStatus(I) . InputBuffer(I);
+
+     OutputBuffer(I: Item) =
+       (I == noItem)  -> itemInLift  . OutputBuffer(hasItem)
+     + (I == hasItem) -> itemOutUser . OutputBuffer(noItem)
+     + sendOutBoxStatus(I) . OutputBuffer(I);
+
+% ---------------------------------------------------------------
+% init (placeholder: everything in parallel, no communication yet)
+% ---------------------------------------------------------------
+init Lift(0, noItem, 0) || Lift(0, noItem, 1)
+  || EmergencyButton || StartButton
+  || InputBuffer(noItem) || OutputBuffer(noItem);
