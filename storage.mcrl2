@@ -1,19 +1,22 @@
-map numFloors, numSpots : Pos;     % Pos, not Nat: div/mod need a positive divisor
+map numFloors, slotsPerFloor : Pos;   % Pos, not Nat: div/mod need a positive divisor
     numSlots : Nat;
-eqn numFloors = 3; numSpots = 2; numSlots = numFloors * numSpots;
+eqn numFloors = 2;
+    slotsPerFloor = 2;
+    numSlots = numFloors * slotsPerFloor;
 
-sort Item = struct hasItem | noItem;
-     
-     Slot = struct slot(fl: Nat, spot: Nat);   % ticket = location (floor, spot); the KEY, carries no state
+sort Item      = struct hasItem | noItem;
+     LiftType  = struct inputLift | outputLift;
+     Slot      = struct slot(fl: Nat, sp: Nat);     % ticket = location (floor, spot); the KEY, carries no state
      SlotState = struct free | pending | stored;
-     Storage = Slot -> SlotState;            % state of every slot; init = lambda s: Slot . free
+     Storage   = Slot -> SlotState;                  % state of every slot; init = lambda s: Slot . free
 
 % ---------------------------------------------------------------
-% Storage data (inside the Brain)
-%   free : nothing there, nothing promised
-%   pending : ticket issued (putLabel), picker has not placed yet
-%   stored : item physically in the slot
-%   slotAt(i)  : the i-th slot in walk order
+% Storage data
+%   free    : nothing there, nothing promised
+%   pending : ticket issued (putLabel), picker has not placed yet   -> req 15
+%   stored  : item physically in the slot                            -> collect allowed
+%   slotAt(i)  : the i-th slot in walk order = THE allocation policy;
+%                swap this one eqn to validate another strategy
 %   chooseSlot : first free slot in walk order (only valid if !isFull)
 % ---------------------------------------------------------------
 map slotAt        : Nat -> Slot;
@@ -22,30 +25,43 @@ map slotAt        : Nat -> Slot;
     firstFreeFrom : Storage # Nat -> Slot;
     chooseSlot    : Storage -> Slot;
 var i: Nat; st: Storage;
-eqn slotAt(i) = slot(i div numSpots, i mod numSpots);        % floor-major: fill floor 0 first
-
-    i == numSlots -> countFree(st, i) = 0;                    % (a map constant is not a pattern: guard it)
+eqn slotAt(i) = slot(i div slotsPerFloor, i mod slotsPerFloor);   % floor-major: fill floor 0 first
+    i == numSlots -> countFree(st, i) = 0;                         % (a map constant is not a pattern: guard it)
     i <  numSlots -> countFree(st, i) = if(st(slotAt(i)) == free, 1, 0) + countFree(st, i + 1);
-
     isFull(st) = countFree(st, 0) == 0;
-
     i <  numSlots -> firstFreeFrom(st, i) = if(st(slotAt(i)) == free, slotAt(i), firstFreeFrom(st, i + 1));
     chooseSlot(st) = firstFreeFrom(st, 0);
 
 % ---------------------------------------------------------------
-% 5.1 Lift component
+% Storage component
+%   storageFull     : answer to a store request when nothing is free
+%   promiseSlot(s)  : answer to a store request; Storage names s (policy)   free    -> pending
+%   completeSlot(s) : the picker placed the item; the partner names s       pending -> stored
+%   takeFromSlot(s) : the picker took the item;   the partner names s       stored  -> free
 % ---------------------------------------------------------------
-act pickUpItem, dropOffItem : Nat;
-    moveToFloor : Nat # Nat;
+act storageFull;
+    promiseSlot, completeSlot, takeFromSlot : Slot;
 
-proc Lift(F: Nat, I: Item, N: Nat) =
-       pickUpItem(N) . Lift(F, hasItem, N) +
-       dropOffItem(N) . Lift(F, noItem, N) +
-       sum f: Nat . (f > 0 && f < numFloors && f != F)
-         -> moveToFloor(f, N) . Lift(f, I, N);
+proc Storage(st: Storage) =
+       isFull(st) 
+         -> storageFull . Storage(st)
+         <> promiseSlot(chooseSlot(st)) . Storage(st[chooseSlot(st) -> pending])
+     + sum i: Nat . (i < numSlots && st(slotAt(i)) == pending) -> completeSlot(slotAt(i)) . Storage(st[slotAt(i) -> stored])
+     + sum i: Nat . (i < numSlots && st(slotAt(i)) == stored)  -> takeFromSlot(slotAt(i)) . Storage(st[slotAt(i) -> free]);
 
 % ---------------------------------------------------------------
-% 5.2 Emergency and Start button component
+% Lift component  (T = which lift; F = floor it is at)
+% ---------------------------------------------------------------
+act pickUpItem, dropOffItem, moveToFloor : Nat # LiftType;
+
+proc Lift(F: Nat, I: Item, T: LiftType) =
+       pickUpItem(F, T)  . Lift(F, hasItem, T)
+     + dropOffItem(F, T) . Lift(F, noItem, T)
+     + sum f: Nat . (f > 0 && f < numFloors && f != F)
+         -> moveToFloor(f, T) . Lift(f, I, T);
+
+% ---------------------------------------------------------------
+% Emergency and Start button  (environment: the user presses)
 % ---------------------------------------------------------------
 act triggerEmergency, resetEmergency, startPress;
 
@@ -53,7 +69,7 @@ proc EmergencyButton = triggerEmergency . resetEmergency . EmergencyButton;
      StartButton     = startPress . StartButton;
 
 % ---------------------------------------------------------------
-% 5.3 Input and output buffers  (environment: box sensors)
+% Input and output buffers  (environment: box sensors)
 %   itemInUser  / itemOutUser : sensor sees the user put in / take out
 %   itemOutLift / itemInLift  : sensor sees the lift take out / put in
 %   send*BoxStatus(I)          : the controller polls the sensor (crossing-style)
@@ -73,8 +89,58 @@ proc InputBuffer(I: Item) =
      + sendOutBoxStatus(I) . OutputBuffer(I);
 
 % ---------------------------------------------------------------
-% init (placeholder: everything in parallel, no communication yet)
+% Printer and Scanner  (interface stubs: offer any ticket / both verdicts,
+% the Brain picks via comm)
 % ---------------------------------------------------------------
-init Lift(0, noItem, 0) || Lift(0, noItem, 1)
-  || EmergencyButton || StartButton
-  || InputBuffer(noItem) || OutputBuffer(noItem);
+act printTicket, scanTicket : Nat # Nat;
+    showStorageError, showTicketError, showTicketValid;
+
+proc Scanner =
+       sum F: Nat . (F < numFloors) ->
+       sum S: Nat . (S < slotsPerFloor) ->
+         scanTicket(F, S) . (showTicketError . Scanner + showTicketValid . Scanner);
+
+     Printer =
+       showStorageError . Printer
+     + sum F: Nat . (F < numFloors) ->
+       sum S: Nat . (S < slotsPerFloor) ->
+         printTicket(F, S) . Printer;
+
+% ---------------------------------------------------------------
+% Picker  (one per floor; L = where it stands)
+% ---------------------------------------------------------------
+sort PickerLoc = struct atSlot(slot: Nat) ? isAtSlot
+               | atLift(liftType: LiftType) ? isAtLift;
+
+act goToCollectLift, collectFromLift, goToGiveLift, giveToLift : Nat;   % floor
+    goToSlot : Nat;                                                      % spot on own floor
+    storeItemToSlot, collectItemFromSlot : Nat # Nat;                    % floor, spot
+
+proc Picker(F: Nat, I: Item, L: PickerLoc) =
+       goToGiveLift(F)    . Picker(F, I, atLift(outputLift))
+     + goToCollectLift(F) . Picker(F, I, atLift(inputLift))
+     + sum S: Nat . (S < slotsPerFloor) -> goToSlot(S) . Picker(F, I, atSlot(S))
+     + isAtSlot(L) -> (
+           (I == hasItem) -> storeItemToSlot(F, slot(L))     . Picker(F, noItem, L)
+                          <> collectItemFromSlot(F, slot(L)) . Picker(F, hasItem, L)
+       )
+     + isAtLift(L) -> (
+           (liftType(L) == inputLift  && I == noItem)  -> collectFromLift(F) . Picker(F, hasItem, L)
+         + (liftType(L) == outputLift && I == hasItem) -> giveToLift(F)      . Picker(F, noItem, L)
+       );
+
+% ---------------------------------------------------------------
+% Brain  (storage + I/O control) -- TODO next session: store flow, collect flow
+% ---------------------------------------------------------------
+
+% ---------------------------------------------------------------
+% init  (placeholder: no Brain yet, no comm/allow yet)
+% ---------------------------------------------------------------
+init EmergencyButton
+  || StartButton
+  || InputBuffer(noItem) || OutputBuffer(noItem)
+  || Printer || Scanner
+  || Lift(0, noItem, inputLift)
+  || Lift(0, noItem, outputLift)
+  || Picker(0, noItem, atSlot(0))
+  || Picker(1, noItem, atSlot(0));
