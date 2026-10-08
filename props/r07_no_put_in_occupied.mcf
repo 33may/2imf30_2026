@@ -1,0 +1,2 @@
+forall s: Slot . val(fl(s) < numFloors && sp(s) < slotsPerFloor) =>
+  [ true* . transferPickerToSlot(s) . (!transferSlotToPicker(s))* . transferPickerToSlot(s) ] false

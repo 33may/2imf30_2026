@@ -1,146 +1,213 @@
-map numFloors, slotsPerFloor : Pos;   % Pos, not Nat: div/mod need a positive divisor
-    numSlots : Nat;
-eqn numFloors = 2;
-    slotsPerFloor = 2;
+map numFloors, slotsPerFloor : Pos;
+    numSlots: Nat;
+
+eqn numFloors = 1;
+    slotsPerFloor = 1;
     numSlots = numFloors * slotsPerFloor;
 
-sort Item      = struct hasItem | noItem;
-     LiftType  = struct inputLift | outputLift;
-     Slot      = struct slot(fl: Nat, sp: Nat);     % ticket = location (floor, spot); the KEY, carries no state
-     SlotState = struct free | pending | stored;
-     Storage   = Slot -> SlotState;                  % state of every slot; init = lambda s: Slot . free
+sort Item = struct hasItem | noItem;
+
+sort LiftType = struct inputLift | outputLift;
+
+sort Slot = struct slot(fl: Nat, sp: Nat);
+    SlotState = struct free | pending | stored;
+    Storage   = Slot -> SlotState;
+
+act liftItemFromPicker, liftItemToPicker, liftItemFromBuffer, liftItemToBuffer, moveToFloor : Nat # LiftType;
+
+proc Lift(F: Nat, I: Item, T: LiftType) =
+    (I == noItem) -> liftItemFromPicker(F, T).Lift(F, hasItem, T) +
+    (I == hasItem) -> liftItemToPicker(F, T).Lift(F, noItem, T) +
+    (I == noItem && F == 0) -> liftItemFromBuffer(F, T).Lift(F, hasItem, T) +
+    (I == hasItem && F == 0) -> liftItemToBuffer(F, T).Lift(F, noItem, T) +
+    sum f: Nat . (f > 0 && f < numFloors && f != F) -> moveToFloor(f, T).Lift(f, I, T);
+
+act itemInUser, itemOutUser, inputBufferLock, inputBufferUnlock;
+    bufferState : Item;
+    bufferToLift, bufferFromLift : Nat # LiftType;
+
+proc
+    InputBuffer(I: Item, locked: Bool) =
+        bufferState(I) . InputBuffer(I, locked) +
+        inputBufferLock . InputBuffer(I, true) +
+        inputBufferUnlock . InputBuffer(I, false) +
+        (!locked && I == noItem)
+            -> itemInUser . InputBuffer(hasItem, locked) +
+        (locked && I == hasItem)
+            -> bufferToLift(0, inputLift) . InputBuffer(noItem, locked);
+
+    OutputBuffer(I: Item) = (I == noItem)
+        -> bufferFromLift(0, outputLift) . OutputBuffer(hasItem)
+        <> itemOutUser . OutputBuffer(noItem);
+
+act printTicket, scanTicket : Slot;
+
+proc Scanner =
+    sum F: Nat . (F < numFloors) ->
+    sum S: Nat . (S < slotsPerFloor) ->
+        scanTicket(slot(F, S)) . Scanner;
+
+proc Printer =
+    sum F: Nat . (F < numFloors) ->
+    sum S: Nat . (S < slotsPerFloor) ->
+        printTicket(slot(F, S)) . Printer;
+
+sort PickerLoc = struct atSlot (slotNr: Nat) ? isAtSlot | atLift (liftType: LiftType) ? isAtLift;
+
+act pickerGoToLift, pickerItemToLift, pickerItemFromLift : Nat # LiftType; % floor nr x lift
+    pickerGoToSlot : Nat;
+    pickerItemToSlot, pickerItemFromSlot : Slot;
+
+proc Picker(F: Nat, I: Item, L: PickerLoc) =
+    pickerGoToLift(F, outputLift) . Picker(F, I, atLift(outputLift))
+    + pickerGoToLift(F, inputLift) . Picker(F, I, atLift(inputLift))
+    + sum S: Nat . (S < slotsPerFloor) -> pickerGoToSlot(S) . Picker(F, I, atSlot(S))
+    + isAtSlot(L) -> (
+        (I == hasItem) -> pickerItemToSlot(slot(F, slotNr(L))) . Picker(F, noItem, L)
+                       <> pickerItemFromSlot(slot(F, slotNr(L))) . Picker(F, hasItem, L)
+    )
+    + isAtLift(L) -> (
+        ((liftType(L) == inputLift) && (I == noItem)) -> pickerItemFromLift(F, inputLift) . Picker(F, hasItem, L)
+        + ((liftType(L) == outputLift) && (I == hasItem)) -> pickerItemToLift(F, outputLift) . Picker(F, noItem, L)
+    );
+
 
 % ---------------------------------------------------------------
 % Storage data
-%   free    : nothing there, nothing promised
-%   pending : ticket issued (putLabel), picker has not placed yet   -> req 15
-%   stored  : item physically in the slot                            -> collect allowed
-%   slotAt(i)  : the i-th slot in walk order = THE allocation policy;
-%                swap this one eqn to validate another strategy
-%   chooseSlot : first free slot in walk order (only valid if !isFull)
-% ---------------------------------------------------------------
+
 map slotAt        : Nat -> Slot;
     countFree     : Storage # Nat -> Nat;
     isFull        : Storage -> Bool;
     firstFreeFrom : Storage # Nat -> Slot;
     chooseSlot    : Storage -> Slot;
+
 var i: Nat; st: Storage;
-eqn slotAt(i) = slot(i div slotsPerFloor, i mod slotsPerFloor);   % floor-major: fill floor 0 first
-    i == numSlots -> countFree(st, i) = 0;                         % (a map constant is not a pattern: guard it)
-    i <  numSlots -> countFree(st, i) = if(st(slotAt(i)) == free, 1, 0) + countFree(st, i + 1);
+eqn slotAt(i) = slot(i div slotsPerFloor, i mod slotsPerFloor);
+    i == numSlots -> countFree(st, i) = 0;
+    i < numSlots -> countFree(st, i) = if(st(slotAt(i)) == free, 1, 0) + countFree(st, i + 1);
     isFull(st) = countFree(st, 0) == 0;
-    i <  numSlots -> firstFreeFrom(st, i) = if(st(slotAt(i)) == free, slotAt(i), firstFreeFrom(st, i + 1));
+    i < numSlots -> firstFreeFrom(st, i) = if(st(slotAt(i)) == free, slotAt(i), firstFreeFrom(st, i + 1));
     chooseSlot(st) = firstFreeFrom(st, 0);
 
 % ---------------------------------------------------------------
-% Storage component
-%   storageFull     : answer to a store request when nothing is free
-%   promiseSlot(s)  : answer to a store request; Storage names s (policy)   free    -> pending
-%   completeSlot(s) : the picker placed the item; the partner names s       pending -> stored
-%   takeFromSlot(s) : the picker took the item;   the partner names s       stored  -> free
-% ---------------------------------------------------------------
+% Storage process
+
 act storageFull;
-    promiseSlot, completeSlot, takeFromSlot : Slot;
+    canStoreSlot, canFetchSlot, promiseSlot, completeSlot, takeFromSlot : Slot;
 
 proc Storage(st: Storage) =
-       isFull(st) 
-         -> storageFull . Storage(st)
-         <> promiseSlot(chooseSlot(st)) . Storage(st[chooseSlot(st) -> pending])
-     + sum i: Nat . (i < numSlots && st(slotAt(i)) == pending) -> completeSlot(slotAt(i)) . Storage(st[slotAt(i) -> stored])
-     + sum i: Nat . (i < numSlots && st(slotAt(i)) == stored)  -> takeFromSlot(slotAt(i)) . Storage(st[slotAt(i) -> free]);
+    isFull(st) -> storageFull . Storage(st) +
+    sum F: Nat . (F < numFloors) ->
+    sum S: Nat . (S < slotsPerFloor) -> (
+        (st(slot(F, S)) == free) -> (
+            promiseSlot(slot(F, S)) . Storage(st[slot(F, S) -> pending])
+            + canStoreSlot(slot(F, S)) . Storage(st)
+        ) +
+        (st(slot(F, S)) == pending) -> completeSlot(slot(F, S)) . Storage(st[slot(F, S) -> stored]) +
+        (st(slot(F, S)) == stored) -> (
+            takeFromSlot(slot(F, S)) . Storage(st[slot(F, S) -> free])
+            + canFetchSlot(slot(F, S)) . Storage(st)
+        )
+    );
 
-% ---------------------------------------------------------------
-% Lift component  (T = which lift; F = floor it is at)
-% ---------------------------------------------------------------
-act pickUpItem, dropOffItem, moveToFloor : Nat # LiftType;
+act startPress;
+    startScanTicket : Slot;
 
-proc Lift(F: Nat, I: Item, T: LiftType) =
-       pickUpItem(F, T)  . Lift(F, hasItem, T)
-     + dropOffItem(F, T) . Lift(F, noItem, T)
-     + sum f: Nat . (f > 0 && f < numFloors && f != F)
-         -> moveToFloor(f, T) . Lift(f, I, T);
+    showErrorNoItem, showErrorStorageFull, unlockInputBuffer;
 
-% ---------------------------------------------------------------
-% Emergency and Start button  (environment: the user presses)
-% ---------------------------------------------------------------
-act triggerEmergency, resetEmergency, startPress;
+    checkBufferState : Item;
+    reserveSlotForNewItem, checkSlotHasItem : Slot;
 
-proc EmergencyButton = triggerEmergency . resetEmergency . EmergencyButton;
-     StartButton     = startPress . StartButton;
+    transferBufferToLift, transferLiftToBuffer,
+    transferLiftToPicker, transferPickerToLift : Nat # LiftType;
 
-% ---------------------------------------------------------------
-% Input and output buffers  (environment: box sensors)
-%   itemInUser  / itemOutUser : sensor sees the user put in / take out
-%   itemOutLift / itemInLift  : sensor sees the lift take out / put in
-%   send*BoxStatus(I)          : the controller polls the sensor (crossing-style)
-% ---------------------------------------------------------------
-act itemInUser, itemInLift, itemOutLift, itemOutUser;
-    sendInBoxStatus,  recvInBoxStatus,  inBoxStatus  : Item;
-    sendOutBoxStatus, recvOutBoxStatus, outBoxStatus : Item;
+    transferPickerToSlot, transferSlotToPicker : Slot;
 
-proc InputBuffer(I: Item) =
-       (I == noItem)  -> itemInUser  . InputBuffer(hasItem)
-     + (I == hasItem) -> itemOutLift . InputBuffer(noItem)
-     + sendInBoxStatus(I) . InputBuffer(I);
+act ctrStoreBegin, ctrStorageFull, ctrUnlockInput, ctrFetchReset;
+    ctrBufferCheck : Item;
+    ctrReserveSlot, ctrFetchBegin, ctrItemExists, ctrItemNotExists, ctrItemStored : Slot;
+    ctrItemFetched, ctrInItemLift, ctrInItemFloor : Nat # LiftType;
 
-     OutputBuffer(I: Item) =
-       (I == noItem)  -> itemInLift  . OutputBuffer(hasItem)
-     + (I == hasItem) -> itemOutUser . OutputBuffer(noItem)
-     + sendOutBoxStatus(I) . OutputBuffer(I);
+proc ControllerStoreSequence =
+    ctrStoreBegin . (
+        (ctrBufferCheck(noItem) . showErrorNoItem . ctrUnlockInput) +
+        (ctrBufferCheck(hasItem) . (
+              ctrStorageFull . ctrUnlockInput
+            + sum F: Nat . (F < numFloors) ->
+              sum S: Nat . (S < slotsPerFloor) ->
+                    ctrReserveSlot(slot(F, S))
+                  . ctrInItemLift(0, inputLift)
+                  . ctrInItemFloor(F, inputLift)
+                  . ctrItemStored(slot(F, S))))
+    );
 
-% ---------------------------------------------------------------
-% Printer and Scanner  (interface stubs: offer any ticket / both verdicts,
-% the Brain picks via comm)
-% ---------------------------------------------------------------
-act printTicket, scanTicket : Nat # Nat;
-    showStorageError, showTicketError, showTicketValid;
+proc ControllerFetchSequence =
+    sum F: Nat . (F < numFloors) ->
+    sum S: Nat . (S < slotsPerFloor) ->
+        ctrFetchBegin(slot(F, S)) . (
+            (ctrItemExists(slot(F, S)) . ctrItemFetched(0, outputLift)) +
+            (ctrItemNotExists(slot(F, S)) . ctrFetchReset)
+        );
 
-proc Scanner =
-       sum F: Nat . (F < numFloors) ->
-       sum S: Nat . (S < slotsPerFloor) ->
-         scanTicket(F, S) . (showTicketError . Scanner + showTicketValid . Scanner);
+proc Controller = (ControllerStoreSequence + ControllerFetchSequence) . Controller;
 
-     Printer =
-       showStorageError . Printer
-     + sum F: Nat . (F < numFloors) ->
-       sum S: Nat . (S < slotsPerFloor) ->
-         printTicket(F, S) . Printer;
+proc FullModel = allow(
+    {
+        itemInUser,
+        itemOutUser,
+        startPress,
+        startScanTicket,
+        showErrorNoItem,
+        showErrorStorageFull,
+        unlockInputBuffer,
+        reserveSlotForNewItem,
+        checkBufferState,
+        checkSlotHasItem,
+        transferBufferToLift,
+        transferLiftToBuffer,
+        transferLiftToPicker,
+        transferPickerToLift,
+        transferPickerToSlot,
+        transferSlotToPicker,
+        pickerGoToSlot,
+        pickerGoToLift,
+        moveToFloor
+    },
+    comm(
+        {
+            ctrStoreBegin | inputBufferLock -> startPress,
+            ctrFetchBegin | scanTicket -> startScanTicket,
 
-% ---------------------------------------------------------------
-% Picker  (one per floor; L = where it stands)
-% ---------------------------------------------------------------
-sort PickerLoc = struct atSlot(slot: Nat) ? isAtSlot
-               | atLift(liftType: LiftType) ? isAtLift;
+            ctrBufferCheck | bufferState -> checkBufferState,
+            ctrUnlockInput | inputBufferUnlock -> unlockInputBuffer,
+            ctrStorageFull | storageFull -> showErrorStorageFull,
 
-act goToCollectLift, collectFromLift, goToGiveLift, giveToLift : Nat;   % floor
-    goToSlot : Nat;                                                      % spot on own floor
-    storeItemToSlot, collectItemFromSlot : Nat # Nat;                    % floor, spot
+            ctrReserveSlot | printTicket | promiseSlot -> reserveSlotForNewItem,
+            ctrItemNotExists | canStoreSlot -> checkSlotHasItem,
+            ctrItemExists | canFetchSlot -> checkSlotHasItem,
 
-proc Picker(F: Nat, I: Item, L: PickerLoc) =
-       goToGiveLift(F)    . Picker(F, I, atLift(outputLift))
-     + goToCollectLift(F) . Picker(F, I, atLift(inputLift))
-     + sum S: Nat . (S < slotsPerFloor) -> goToSlot(S) . Picker(F, I, atSlot(S))
-     + isAtSlot(L) -> (
-           (I == hasItem) -> storeItemToSlot(F, slot(L))     . Picker(F, noItem, L)
-                          <> collectItemFromSlot(F, slot(L)) . Picker(F, hasItem, L)
-       )
-     + isAtLift(L) -> (
-           (liftType(L) == inputLift  && I == noItem)  -> collectFromLift(F) . Picker(F, hasItem, L)
-         + (liftType(L) == outputLift && I == hasItem) -> giveToLift(F)      . Picker(F, noItem, L)
-       );
+            ctrInItemLift | bufferToLift | liftItemFromBuffer -> transferBufferToLift,
 
-% ---------------------------------------------------------------
-% Brain  (storage + I/O control) -- TODO next session: store flow, collect flow
-% ---------------------------------------------------------------
+            ctrInItemFloor | liftItemToPicker | pickerItemFromLift -> transferLiftToPicker,
+            liftItemFromPicker | pickerItemToLift -> transferPickerToLift,
 
-% ---------------------------------------------------------------
-% init  (placeholder: no Brain yet, no comm/allow yet)
-% ---------------------------------------------------------------
-init EmergencyButton
-  || StartButton
-  || InputBuffer(noItem) || OutputBuffer(noItem)
-  || Printer || Scanner
-  || Lift(0, noItem, inputLift)
-  || Lift(0, noItem, outputLift)
-  || Picker(0, noItem, atSlot(0))
-  || Picker(1, noItem, atSlot(0));
+            pickerItemFromSlot | takeFromSlot -> transferSlotToPicker,
+
+            ctrItemStored | pickerItemToSlot | completeSlot -> transferPickerToSlot,
+            ctrItemFetched | bufferFromLift | liftItemToBuffer -> transferLiftToBuffer
+        },
+        (
+            Controller
+            || Storage(lambda s: Slot . free)
+            || InputBuffer(noItem, false)
+            || OutputBuffer(noItem)
+            || Printer
+            || Scanner
+            || Lift(0, noItem, inputLift)
+            || Lift(0, noItem, outputLift)
+            || Picker(0, noItem, atSlot(0))
+        )
+    )
+);
+
+init hide({ pickerGoToSlot, pickerGoToLift, moveToFloor }, FullModel);

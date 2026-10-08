@@ -1,0 +1,2 @@
+[ true* ] forall s: Slot .
+  [ transferPickerToSlot(s) ] nu X . ( [ transferPickerToSlot(s) ] false && [ !transferSlotToPicker(s) ] X )
