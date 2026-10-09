@@ -1,0 +1,136 @@
+sort
+    % Use a finite struct type for slots and tickets to avoid infinite state space.
+    % the system has 6 total slots, 3 per floor, while floor 0 is only for item entry/exit
+    SlotId = struct s0 | s1 | s2 | s3 ;
+	FloorId = struct f0 | f1 | f2;
+    Direction = struct input | output;
+    Mode = struct normal | emergency;
+
+map
+    cap: Nat;
+    slot_info: SlotId -> FloorId;
+    add_item: SlotId # FSet(SlotId) -> FSet(SlotId);
+    remove_item: SlotId # FSet(SlotId) -> FSet(SlotId);
+
+var
+    fn: FloorId;
+    ps: SlotId;
+	occupiedSlots: FSet(SlotId);
+eqn
+    cap = 4;
+    slot_info(s0) = f0; slot_info(s1) = f0;
+    slot_info(s2) = f1; slot_info(s3) = f1;
+%    slot_info(s4) = f2; slot_info(s5) = f2;
+    add_item(ps, occupiedSlots) = occupiedSlots + {ps};
+    remove_item(ps, occupiedSlots) = occupiedSlots - {ps};
+
+% LIFT CONTROLLER
+act
+    moveToFloor: FloorId;
+	rcvItemLiftFromPicker, sendItemLiftToPicker, rcvItemLiftFromBuffer, sendItemLiftToBuffer: SlotId;
+	itemCollectOK, itemStoreOK, itemStoreKO, itemCollectKO;
+
+% --------------------------TODO you can probably get rid of the current floor -----------------------------
+proc Lift(lt: Direction, cf: FloorId) =
+    (lt == output) -> ( itemCollectOK . (sum slot: SlotId  . moveToFloor(slot_info(slot)) . rcvItemLiftFromPicker(slot) . moveToFloor(f0) . sendItemLiftToBuffer(slot) . Lift(lt, cf)) +
+									itemCollectKO . Lift(lt, cf) )
+	+
+    (lt == input) -> ( itemStoreOK . (sum slot: SlotId . rcvItemLiftFromBuffer(slot) . moveToFloor(slot_info(slot)) . sendItemLiftToPicker(slot) . moveToFloor(f0) . Lift(lt, cf)) +
+								itemStoreKO . Lift(lt, cf) );
+
+% BUFFER CONTROLLER
+act
+	itemUserInOK,itemUserInKO;
+    itemUserOutKO , itemUserOutOK, itemUserOut;
+	sendItemBufferToLift: SlotId; %the item is destined for this slotId
+	rcvItemBufferFromLift: SlotId; %the item is coming from this slotId
+
+proc Buffer(bt: Direction) =
+    (bt == input) -> (itemUserInOK . sum s: SlotId . (sendItemBufferToLift(s)) . Buffer(bt) + 
+								itemUserInKO . Buffer(bt))
+	+
+    (bt == output) -> (itemUserOutOK .  sum s: SlotId . (rcvItemBufferFromLift(s)) . itemUserOut . Buffer(bt) +
+								itemUserOutKO . Buffer(bt));
+
+% SCANNER CONTROLLER
+act scanTicket: SlotId;
+	sendItemCollectReq: SlotId;
+	rcvItemCollectOK, rcvItemCollectKO;
+    ticketOK; % valid ticket presented
+    ticketKO; % invaldi ticket presented;
+
+proc Scanner = 
+    sum sId: SlotId . scanTicket(sId) . sendItemCollectReq(sId) .
+        ( (rcvItemCollectOK . ticketOK . Scanner) +
+          (rcvItemCollectKO . ticketKO . Scanner));
+
+% PRINTER CONTROLLER
+act printTicket: SlotId;
+    sendItemStoreReq: SlotId; % item presented can not be stored
+	rcvItemStoreOK, rcvItemStoreKO;
+    itemOKPrint, itemKOPrint; % item presented can be stored;
+
+proc Printer =
+    sum sId: SlotId . sendItemStoreReq(sId) .
+        ( (rcvItemStoreOK . printTicket(sId) . Printer) +
+          (rcvItemStoreKO . Printer) );
+
+% PICKER CONTROLLER
+act rcvItemPickerFromLift, sendItemPickerToLift, goToSlot, storeItemToSlot, collectItemFromSlot: SlotId;
+		goToInputLift, goToOutputLift, rcvItemCollectCmd, rcvItemStoreCmd;
+
+proc Picker(pID: FloorId) = 
+    sum sId: SlotId . (
+    		rcvItemStoreCmd . goToInputLift . rcvItemPickerFromLift(sId) . goToSlot(sId) . storeItemToSlot(sId) . goToInputLift . Picker(pID) +
+            rcvItemCollectCmd . goToSlot(sId) .  collectItemFromSlot(sId) . goToOutputLift . sendItemPickerToLift(sId) . Picker(pID)
+	);
+
+% STORAGE CONTROLLER
+act 
+    rcvStoreReq, rcvCollectReq : SlotId;
+	sendStoreReqOK, sendStoreReqKO, sendCollectReqOK, sendCollectReqKO;
+
+% ------------ TODO: check whether you can get rid of n and use the FSet only ------------------
+proc Storage(n: Int, slots: FSet(SlotId))  =
+	sum sId: SlotId . (
+		rcvCollectReq(sId) .
+		    (sId in slots) -> sendCollectReqOK . Storage(n-1, remove_item(sId, slots))
+       				               <> sendCollectReqKO . Storage(n, slots)
+		+
+		rcvStoreReq(sId) .
+			(n<cap) -> sendStoreReqOK . Storage(n+1, add_item(sId, slots))
+            			  <> sendStoreReqKO . Storage(n, slots)
+	);
+ 
+% ----------------------TODO: EMERGENCY CONTROLLER----------------------------------------
+
+act 
+	transferItemBufferToLift, transferItemLiftToPicker, transferItemLiftToBuffer, transferItemPickerToLift, storeRequest, collectRequest: SlotId;
+	storeOK, storeKO, collectOK, collectKO;
+
+init
+	allow(	{ 
+			transferItemBufferToLift, transferItemLiftToPicker, transferItemLiftToBuffer, transferItemPickerToLift,
+			goToSlot, goToInputLift, goToOutputLift, storeItemToSlot, collectItemFromSlot,
+			storeRequest, storeOK, storeKO, collectRequest, collectOK, collectKO, printTicket, scanTicket
+		 },
+		comm( {
+				% BUFFER						| STORAGE						| LIFT									| PICKER							| PRINTER					| SCANNER						| RESULT
+				sendItemBufferToLift 												| rcvItemLiftFromBuffer 																															-> transferItemBufferToLift,
+														   											   sendItemLiftToPicker 	| rcvItemPickerFromLift 																				-> transferItemLiftToPicker,
+				rcvItemBufferFromLift																						| sendItemLiftToBuffer 																					-> transferItemLiftToBuffer,
+																									   rcvItemLiftFromPicker | sendItemPickerToLift 																					-> transferItemPickerToLift,
+															rcvStoreReq																											| sendItemStoreReq  											-> storeRequest,
+				itemUserInOK				 | sendStoreReqOK			| itemStoreOK					| rcvItemStoreCmd			| rcvItemStoreOK   												-> storeOK,
+														    sendStoreReqKO 			| itemStoreKO																| rcvItemStoreKO													-> storeKO,
+															rcvCollectReq 																																			| sendItemCollectReq 	-> collectRequest,
+				itemUserOutOK			 | sendCollectReqOK 		| itemCollectOK				| rcvItemCollectCmd 											| rcvItemCollectOK			-> collectOK,
+				 											sendCollectReqKO 		| itemCollectKO																								| rcvItemCollectKO 			-> collectKO
+			},
+			Buffer(input) || Buffer(output) || Lift(input, f0) || Lift(output, f0)  || Picker(f0) || Picker(f1) || Picker(f2) || Storage(0, {}) || Printer || Scanner
+		)
+	);
+
+
+
+

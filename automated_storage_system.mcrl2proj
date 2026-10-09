@@ -1,0 +1,9 @@
+<root>
+ <spec>automated_storage_system_specs.mcrl2</spec>
+ <properties>
+  <property>no deadlocks</property>
+ </properties>
+ <jittyc>false</jittyc>
+ <linearisation_method>regular</linearisation_method>
+ <enumeration_limit>0</enumeration_limit>
+</root>

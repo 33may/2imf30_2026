@@ -1,2 +1,0 @@
-forall s: Slot . val(fl(s) < numFloors && sp(s) < slotsPerFloor) =>
-  [ true* . reserveSlotForNewItem(s) . (!transferSlotToPicker(s))* . reserveSlotForNewItem(s) ] false
