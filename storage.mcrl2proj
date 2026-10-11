@@ -1,0 +1,12 @@
+<root>
+ <spec>storage.mcrl2</spec>
+ <properties>
+  <property>r07_nested</property>
+  <property>r07_no_put_in_occupied</property>
+  <property>r08_no_take_from_empty</property>
+  <property>r15_no_ticket_for_taken_slot</property>
+ </properties>
+ <jittyc>false</jittyc>
+ <linearisation_method>regular</linearisation_method>
+ <enumeration_limit>0</enumeration_limit>
+</root>
