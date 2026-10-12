@@ -1,0 +1,3 @@
+% R05. When the system is in the emergency state, neither the store lift, the collect lift, nor any picker moves.
+forall n: Nat . val(n < slotsPerFloor) =>
+    [ true* . emeTrigger . !emeReset* . movePickerToSlot(n) ] false

@@ -7,20 +7,28 @@ eqn numFloors = 1;
 
 sort Item = struct hasItem | noItem;
 
-sort LiftType = struct inputLift | outputLift;
+    LiftType = struct inputLift | outputLift;
 
-sort Slot = struct slot(fl: Nat, sp: Nat);
+    PickerLoc = struct atSlot (slotNr: Nat) ? isAtSlot | atLift (liftType: LiftType) ? isAtLift;
+
+    Slot = struct slot(fl: Nat, sp: Nat);
+
     SlotState = struct free | pending | stored;
+
     Storage   = Slot -> SlotState;
 
-act liftItemFromPicker, liftItemToPicker, liftItemFromBuffer, liftItemToBuffer, moveToFloor : Nat # LiftType;
+map AllSlots : Set(Slot);
+
+eqn AllSlots = { s: Slot | fl(s) < numFloors && sp(s) < slotsPerFloor };
+
+act liftItemFromPicker, liftItemToPicker, liftItemFromBuffer, liftItemToBuffer, liftGoToFloor : Nat # LiftType;
 
 proc Lift(F: Nat, I: Item, T: LiftType) =
     (I == noItem) -> liftItemFromPicker(F, T).Lift(F, hasItem, T) +
     (I == hasItem) -> liftItemToPicker(F, T).Lift(F, noItem, T) +
     (I == noItem && F == 0) -> liftItemFromBuffer(F, T).Lift(F, hasItem, T) +
     (I == hasItem && F == 0) -> liftItemToBuffer(F, T).Lift(F, noItem, T) +
-    sum f: Nat . (f > 0 && f < numFloors && f != F) -> moveToFloor(f, T).Lift(f, I, T);
+    sum f: Nat . (f > 0 && f < numFloors && f != F) -> liftGoToFloor(f, T).Lift(f, I, T);
 
 act itemInUser, itemOutUser, inputBufferLock, inputBufferUnlock;
     bufferState : Item;
@@ -51,8 +59,6 @@ proc Printer =
     sum F: Nat . (F < numFloors) ->
     sum S: Nat . (S < slotsPerFloor) ->
         printTicket(slot(F, S)) . Printer;
-
-sort PickerLoc = struct atSlot (slotNr: Nat) ? isAtSlot | atLift (liftType: LiftType) ? isAtLift;
 
 act pickerGoToLift, pickerItemToLift, pickerItemFromLift : Nat # LiftType; % floor nr x lift
     pickerGoToSlot : Nat;
@@ -110,6 +116,16 @@ proc Storage(st: Storage) =
         )
     );
 
+act emeTrigger, emeReset;
+    safeLiftGoToFloor : Nat # LiftType;
+    safePickerGoToSlot : Nat;
+    safePickerGoToLift : Nat # LiftType;
+
+proc EmergencyController = emeTrigger . emeReset . EmergencyController +
+    sum f: Nat . (f < numFloors) -> sum l: LiftType . safeLiftGoToFloor(f, l) . EmergencyController +
+    sum n: Nat . (n < slotsPerFloor) -> safePickerGoToSlot(n) . EmergencyController +
+    sum f: Nat . (f < numFloors) -> sum l: LiftType . safePickerGoToLift(f, l) . EmergencyController;
+
 act startPress;
     startScanTicket : Slot;
 
@@ -123,30 +139,41 @@ act startPress;
 
     transferPickerToSlot, transferSlotToPicker : Slot;
 
-act ctrStoreBegin, ctrStorageFull, ctrUnlockInput, ctrFetchReset;
-    ctrBufferCheck : Item;
-    ctrReserveSlot, ctrFetchBegin, ctrItemExists, ctrItemNotExists, ctrItemStored : Slot;
-    ctrItemFetched, ctrInItemLift, ctrInItemFloor : Nat # LiftType;
+    movePickerToSlot : Nat;
+    movePickerToLift : Nat # LiftType;
+
+    moveLift : Nat # LiftType;
+
+act ctrStoreBegin, ctrStorageFull, ctrUnlockInput;
+    ctrInBufferCheck : Item;
+    ctrInReserveSlot, ctrInItemStored : Slot;
+    ctrInItemLift, ctrInItemFloor : Nat # LiftType;
+
+    ctrFetchBegin : Slot;
+    ctrOutItemExists, ctrOutItemNotExists : Slot;
+    ctrOutItemPicked : Slot;
+    ctrOutItemLift : Nat # LiftType;
+    ctrOutItemFetched : Nat # LiftType;
 
 proc ControllerStoreSequence =
     ctrStoreBegin . (
-        (ctrBufferCheck(noItem) . showErrorNoItem . ctrUnlockInput) +
-        (ctrBufferCheck(hasItem) . (
+        (ctrInBufferCheck(noItem) . showErrorNoItem . ctrUnlockInput) +
+        (ctrInBufferCheck(hasItem) . (
               ctrStorageFull . ctrUnlockInput
             + sum F: Nat . (F < numFloors) ->
               sum S: Nat . (S < slotsPerFloor) ->
-                    ctrReserveSlot(slot(F, S))
+                    ctrInReserveSlot(slot(F, S))
                   . ctrInItemLift(0, inputLift)
                   . ctrInItemFloor(F, inputLift)
-                  . ctrItemStored(slot(F, S))))
+                  . ctrInItemStored(slot(F, S))))
     );
 
 proc ControllerFetchSequence =
     sum F: Nat . (F < numFloors) ->
     sum S: Nat . (S < slotsPerFloor) ->
         ctrFetchBegin(slot(F, S)) . (
-            (ctrItemExists(slot(F, S)) . ctrItemFetched(0, outputLift)) +
-            (ctrItemNotExists(slot(F, S)) . ctrFetchReset)
+            (ctrOutItemExists(slot(F, S)) . ctrOutItemPicked(slot(F, S)) . ctrOutItemLift(F, outputLift) . ctrOutItemFetched(0, outputLift)) +
+            (ctrOutItemNotExists(slot(F, S)) . showErrorNoItem)
         );
 
 proc Controller = (ControllerStoreSequence + ControllerFetchSequence) . Controller;
@@ -169,35 +196,39 @@ proc FullModel = allow(
         transferPickerToLift,
         transferPickerToSlot,
         transferSlotToPicker,
-        pickerGoToSlot,
-        pickerGoToLift,
-        moveToFloor
+        emeTrigger,
+        emeReset,
+        movePickerToSlot,
+        movePickerToLift,
+        moveLift
     },
     comm(
         {
             ctrStoreBegin | inputBufferLock -> startPress,
             ctrFetchBegin | scanTicket -> startScanTicket,
 
-            ctrBufferCheck | bufferState -> checkBufferState,
             ctrUnlockInput | inputBufferUnlock -> unlockInputBuffer,
             ctrStorageFull | storageFull -> showErrorStorageFull,
 
-            ctrReserveSlot | printTicket | promiseSlot -> reserveSlotForNewItem,
-            ctrItemNotExists | canStoreSlot -> checkSlotHasItem,
-            ctrItemExists | canFetchSlot -> checkSlotHasItem,
-
+            ctrInBufferCheck | bufferState -> checkBufferState,
+            ctrInReserveSlot | printTicket | promiseSlot -> reserveSlotForNewItem,
             ctrInItemLift | bufferToLift | liftItemFromBuffer -> transferBufferToLift,
-
             ctrInItemFloor | liftItemToPicker | pickerItemFromLift -> transferLiftToPicker,
-            liftItemFromPicker | pickerItemToLift -> transferPickerToLift,
+            ctrInItemStored | pickerItemToSlot | completeSlot -> transferPickerToSlot,
 
-            pickerItemFromSlot | takeFromSlot -> transferSlotToPicker,
+            ctrOutItemNotExists | canStoreSlot -> checkSlotHasItem,
+            ctrOutItemExists | canFetchSlot -> checkSlotHasItem,
+            ctrOutItemPicked | pickerItemFromSlot | takeFromSlot -> transferSlotToPicker,
+            ctrOutItemLift | liftItemFromPicker | pickerItemToLift -> transferPickerToLift,
+            ctrOutItemFetched | bufferFromLift | liftItemToBuffer -> transferLiftToBuffer,
 
-            ctrItemStored | pickerItemToSlot | completeSlot -> transferPickerToSlot,
-            ctrItemFetched | bufferFromLift | liftItemToBuffer -> transferLiftToBuffer
+            pickerGoToSlot | safePickerGoToSlot -> movePickerToSlot,
+            pickerGoToLift | safePickerGoToLift -> movePickerToLift,
+            liftGoToFloor | safeLiftGoToFloor -> moveLift
         },
         (
             Controller
+            || EmergencyController
             || Storage(lambda s: Slot . free)
             || InputBuffer(noItem, false)
             || OutputBuffer(noItem)
@@ -210,4 +241,10 @@ proc FullModel = allow(
     )
 );
 
-init hide({ pickerGoToSlot, pickerGoToLift, moveToFloor }, FullModel);
+% Required when checking R05, as we need access to component's move actions.
+% init FullModel;
+
+% When checking for deadlocks, make sure to check the property against a REDUCED model with weak bisim,
+% otherwise states with only a tau self transitions (ex the lift moving around but the rest of the system 
+% is stuck) will not count as a deadlock!
+init hide({ movePickerToSlot, movePickerToLift, moveLift }, FullModel);

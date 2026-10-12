@@ -1,0 +1,3 @@
+% R06. After the emergency reset button is pressed, every store or collect operation interrupted by the emergency eventually completes.
+forall s: Slot . val(fl(s) < numFloors && sp(s) < slotsPerFloor) =>
+    [ true* . reserveSlotForNewItem(s) . !transferPickerToSlot(s)* . emeTrigger ]< true* . transferSlotToPicker(s) > true

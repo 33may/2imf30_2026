@@ -1,6 +1,10 @@
 <root>
  <spec>storage.mcrl2</spec>
  <properties>
+  <property>r05_emergency_picker_1</property>
+  <property>r05_emergency_picker_2</property>
+  <property>r05_emergency_lift</property>
+  <property>r06_emergency_reset</property>
   <property>r07_nested</property>
   <property>r07_no_put_in_occupied</property>
   <property>r08_no_take_from_empty</property>
