@@ -1,7 +1,7 @@
 map numFloors, slotsPerFloor : Pos;
     numSlots: Nat;
 
-eqn numFloors = 1;
+eqn numFloors = 2;
     slotsPerFloor = 1;
     numSlots = numFloors * slotsPerFloor;
 
@@ -50,15 +50,8 @@ proc
 
 act printTicket, scanTicket : Slot;
 
-proc Scanner =
-    sum F: Nat . (F < numFloors) ->
-    sum S: Nat . (S < slotsPerFloor) ->
-        scanTicket(slot(F, S)) . Scanner;
-
-proc Printer =
-    sum F: Nat . (F < numFloors) ->
-    sum S: Nat . (S < slotsPerFloor) ->
-        printTicket(slot(F, S)) . Printer;
+proc Scanner = sum s: Slot . (s in AllSlots) -> scanTicket(s) . Scanner;
+proc Printer = sum s: Slot . (s in AllSlots) -> printTicket(s) . Printer;
 
 act pickerGoToLift, pickerItemToLift, pickerItemFromLift : Nat # LiftType; % floor nr x lift
     pickerGoToSlot : Nat;
@@ -103,16 +96,15 @@ act storageFull;
 
 proc Storage(st: Storage) =
     isFull(st) -> storageFull . Storage(st) +
-    sum F: Nat . (F < numFloors) ->
-    sum S: Nat . (S < slotsPerFloor) -> (
-        (st(slot(F, S)) == free) -> (
-            promiseSlot(slot(F, S)) . Storage(st[slot(F, S) -> pending])
-            + canStoreSlot(slot(F, S)) . Storage(st)
+    sum s: Slot . (s in AllSlots) -> (
+        (st(s) == free) -> (
+            promiseSlot(s) . Storage(st[s -> pending])
+            + canStoreSlot(s) . Storage(st)
         ) +
-        (st(slot(F, S)) == pending) -> completeSlot(slot(F, S)) . Storage(st[slot(F, S) -> stored]) +
-        (st(slot(F, S)) == stored) -> (
-            takeFromSlot(slot(F, S)) . Storage(st[slot(F, S) -> free])
-            + canFetchSlot(slot(F, S)) . Storage(st)
+        (st(s) == pending) -> completeSlot(s) . Storage(st[s -> stored]) +
+        (st(s) == stored) -> (
+            takeFromSlot(s) . Storage(st[s -> free])
+            + canFetchSlot(s) . Storage(st)
         )
     );
 
@@ -160,21 +152,18 @@ proc ControllerStoreSequence =
         (ctrInBufferCheck(noItem) . showErrorNoItem . ctrUnlockInput) +
         (ctrInBufferCheck(hasItem) . (
               ctrStorageFull . ctrUnlockInput
-            + sum F: Nat . (F < numFloors) ->
-              sum S: Nat . (S < slotsPerFloor) ->
-                    ctrInReserveSlot(slot(F, S))
-                  . ctrInItemLift(0, inputLift)
-                  . ctrInItemFloor(F, inputLift)
-                  . ctrInItemStored(slot(F, S))))
+            + sum s: Slot . (s in AllSlots) ->
+                ctrInReserveSlot(s)
+                . ctrInItemLift(0, inputLift)
+                . ctrInItemFloor(fl(s), inputLift)
+                . ctrInItemStored(s)))
     );
 
-proc ControllerFetchSequence =
-    sum F: Nat . (F < numFloors) ->
-    sum S: Nat . (S < slotsPerFloor) ->
-        ctrFetchBegin(slot(F, S)) . (
-            (ctrOutItemExists(slot(F, S)) . ctrOutItemPicked(slot(F, S)) . ctrOutItemLift(F, outputLift) . ctrOutItemFetched(0, outputLift)) +
-            (ctrOutItemNotExists(slot(F, S)) . showErrorNoItem)
-        );
+proc ControllerFetchSequence = sum s: Slot . (s in AllSlots) ->
+    ctrFetchBegin(s) . (
+        (ctrOutItemExists(s) . ctrOutItemPicked(s) . ctrOutItemLift(fl(s), outputLift) . ctrOutItemFetched(0, outputLift)) +
+        (ctrOutItemNotExists(s) . showErrorNoItem)
+    );
 
 proc Controller = (ControllerStoreSequence + ControllerFetchSequence) . Controller;
 
@@ -237,14 +226,15 @@ proc FullModel = allow(
             || Lift(0, noItem, inputLift)
             || Lift(0, noItem, outputLift)
             || Picker(0, noItem, atSlot(0))
+            || Picker(1, noItem, atSlot(0))
         )
     )
 );
 
 % Required when checking R05, as we need access to component's move actions.
-% init FullModel;
+init FullModel;
 
 % When checking for deadlocks, make sure to check the property against a REDUCED model with weak bisim,
 % otherwise states with only a tau self transitions (ex the lift moving around but the rest of the system 
 % is stuck) will not count as a deadlock!
-init hide({ movePickerToSlot, movePickerToLift, moveLift }, FullModel);
+% init hide({ movePickerToSlot, movePickerToLift, moveLift }, FullModel);

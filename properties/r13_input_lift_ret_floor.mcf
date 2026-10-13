@@ -1,0 +1,3 @@
+% R13. After handing over an item to a picker, the store lift eventually returns to the ground floor, unless an emergency occurs.
+forall f : Nat . val(f < numFloors) =>
+    [ true* . transferLiftToPicker(f, inputLift) ]< true* . moveLift(0, inputLift) > true

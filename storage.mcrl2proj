@@ -8,6 +8,9 @@
   <property>r07_nested</property>
   <property>r07_no_put_in_occupied</property>
   <property>r08_no_take_from_empty</property>
+  <property>r09_picker_slot_adjecency</property>
+  <property>r13_input_lift_ret_floor</property>
+  <property>r14_picker_places_item</property>
   <property>r15_no_ticket_for_taken_slot</property>
  </properties>
  <jittyc>false</jittyc>
