@@ -1,0 +1,2 @@
+%r R17 no transfer of an item happens between the picker and the output lift if the picker has not moved to the collect station and the lift has not gone to the correct floor
+ 

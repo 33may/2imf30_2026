@@ -1,0 +1,3 @@
+% R06. After the emergency reset button is pressed, every store or collect operation interrupted by the emergency eventually completes.
+forall s: SlotId .
+    [ true* . storeOK(s) . !pickerStoreItem(toFloor(s), s)* . triggerEmergency ]< true* . pickerStoreItem(toFloor(s),s) > true

@@ -2,6 +2,16 @@
  <spec>automated_storage_system_specs.mcrl2</spec>
  <properties>
   <property>no deadlocks</property>
+  <property>r04 item stored after ticketPrint unless emergency</property>
+  <property>r08_no_take_from_empty</property>
+  <property>r05_emergency_lift</property>
+  <property>r06_emergency_reset</property>
+  <property>r07_no_put_in_occupied</property>
+  <property>r09_picker_slot_adjecency</property>
+  <property>r14_picker_places_item</property>
+  <property>r15_no_ticket_for_taken_slot</property>
+  <property>r11_no_handover_to_picker_if_it_is_at_slot_or_lift_not_at_floor</property>
+  <property>r17_no_transfer_to_out_lift_if_picker_not_at_station_or_lift_did_not_move_there</property>
  </properties>
  <jittyc>false</jittyc>
  <linearisation_method>regular</linearisation_method>

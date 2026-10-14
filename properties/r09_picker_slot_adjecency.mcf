@@ -1,0 +1,5 @@
+% R09. A picker never attempts to place an item in a slot that it is not adjacent to.
+forall s: SlotId .
+	forall p: SlotId .
+		val(s != p) =>
+    		[ true* . movePickerToSlot(toFloor(p), p) . !movePickerToSlot(toFloor(p), s)* . pickerStoreItem(toFloor(p), s) ] false

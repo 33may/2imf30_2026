@@ -1,0 +1,4 @@
+forall s: SlotId .
+	[ (!pickerStoreItem(toFloor(s),s))* . pickerCollectItem(toFloor(s), s) ] false
+    &&
+	[ true* . pickerCollectItem(toFloor(s),s) . (!pickerStoreItem(toFloor(s),s))* . pickerCollectItem(toFloor(s),s) ] false

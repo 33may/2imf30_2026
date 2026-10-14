@@ -1,0 +1,3 @@
+forall s: SlotId .
+		[!moveLift(input,toFloor(s))* . transferItemLiftToPicker(s)] false
+		||  [!pickerToInputLift(toFloor(s))* . transferItemLiftToPicker(s)] false

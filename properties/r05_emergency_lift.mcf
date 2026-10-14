@@ -1,0 +1,3 @@
+% R05. When the system is in the emergency state, neither the store lift, the collect lift, nor any picker moves.
+forall s: SlotId . forall d: Direction .
+    [ true* . triggerEmergency . !resetEmergency* . (moveLift(d, toFloor(s)) + movePickerToSlot(toFloor(s), s) +  pickerToInputLift(toFloor(s)) + pickerToOutputLift(toFloor(s)) ) ] false
