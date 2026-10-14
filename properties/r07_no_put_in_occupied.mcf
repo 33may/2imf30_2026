@@ -1,4 +1,8 @@
 % a) A picker never places an item in an occupied slot.
+%
+% b) For every slot s, a transferPickerToSlot(s) never happens when an earlier
+%    transferPickerToSlot(s) has happened without a transferSlotToPicker(s) in between.
 
+% c)
 forall s: Slot . val(fl(s) < numFloors && sp(s) < slotsPerFloor) =>
   [ true* . transferPickerToSlot(s) . (!transferSlotToPicker(s))* . transferPickerToSlot(s) ] false

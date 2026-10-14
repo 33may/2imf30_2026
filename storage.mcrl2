@@ -28,7 +28,7 @@ proc Lift(F: Nat, I: Item, T: LiftType) =
     (I == hasItem) -> liftItemToPicker(F, T).Lift(F, noItem, T) +
     (I == noItem && F == 0) -> liftItemFromBuffer(F, T).Lift(F, hasItem, T) +
     (I == hasItem && F == 0) -> liftItemToBuffer(F, T).Lift(F, noItem, T) +
-    sum f: Nat . (f > 0 && f < numFloors && f != F) -> liftGoToFloor(f, T).Lift(f, I, T);
+    sum f: Nat . (f < numFloors && f != F) -> liftGoToFloor(f, T).Lift(f, I, T);
 
 act itemInUser, itemOutUser, inputBufferLock, inputBufferUnlock;
     bufferState : Item;

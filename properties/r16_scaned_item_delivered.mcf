@@ -9,3 +9,16 @@
 forall s: Slot . val(fl(s) < numFloors && sp(s) < slotsPerFloor) =>
     [ true* . transferPickerToSlot(s) . (!transferSlotToPicker(s))* . startScanTicket(s) ]
     mu X . ( [ !(transferLiftToBuffer(0, outputLift) || emeTrigger) ] X && <true> true )
+
+%
+%   itemInUser
+%   movePickerToLift(0, inputLift)
+%   startPress
+%   checkBufferState(hasItem)
+%   reserveSlotForNewItem(slot(0, 0))
+%   transferBufferToLift(0, inputLift)
+%   transferLiftToPicker(0, inputLift)
+%   movePickerToSlot(0)
+%   transferPickerToSlot(slot(0, 0))
+%   startScanTicket(slot(0, 0))
+%   movePickerToSlot(0)              <- loops on itself forever

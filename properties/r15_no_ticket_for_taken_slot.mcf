@@ -1,2 +1,9 @@
+% a) A ticket is never issued for a slot that is currently occupied or a picker is in the
+%    process of depositing an item into that slot.
+%
+% b) For every slot s, a reserveSlotForNewItem(s) never happens when an earlier
+%    reserveSlotForNewItem(s) has happened without a transferSlotToPicker(s) in between.
+
+% c)
 forall s: Slot . val(fl(s) < numFloors && sp(s) < slotsPerFloor) =>
   [ true* . reserveSlotForNewItem(s) . (!transferSlotToPicker(s))* . reserveSlotForNewItem(s) ] false

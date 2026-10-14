@@ -1,5 +1,10 @@
 % a) A picker never attempts to pick up an item from an empty slot.
+%
+% b) For every slot s, a transferSlotToPicker(s) never happens before the first
+%    transferPickerToSlot(s), and two transferSlotToPicker(s) never happen without a
+%    transferPickerToSlot(s) in between.
 
+% c)
 forall s: Slot . val(fl(s) < numFloors && sp(s) < slotsPerFloor) =>
   (    [ (!transferPickerToSlot(s))* . transferSlotToPicker(s) ] false
     && [ true* . transferSlotToPicker(s) . (!transferPickerToSlot(s))* . transferSlotToPicker(s) ] false )
