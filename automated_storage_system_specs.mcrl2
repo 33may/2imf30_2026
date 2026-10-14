@@ -1,6 +1,5 @@
 sort
-    % Use a finite struct type for slots and tickets to avoid infinite state space.
-    % the system has 6 total slots, 3 per floor, while floor 0 is only for item entry/exit
+    % Use a finite struct type for slots and tickets to avoid large state space.
     SlotId = struct s0 | s1 | s2 | s3 ;
 	FloorId = struct f0 | f1 | f2;
     Direction = struct input | output;
@@ -53,7 +52,7 @@ proc Lift(lt: Direction) =
 
 % BUFFER CONTROLLER
 act
-	itemUserInOK,itemUserInKO, itemUserOutKO , itemUserOutOK, itemUserOut: SlotId;
+	itemUserInOK,itemUserInKO, itemUserOutKO , itemUserOutOK: SlotId;
 	sendItemBufferToLift: SlotId; %the item is destined for this slotId
 	rcvItemBufferFromLift: SlotId; %the item is coming from this slotId
 
@@ -62,20 +61,17 @@ proc Buffer(bt: Direction) =
 	    (bt == input) -> (itemUserInOK(sId) . sendItemBufferToLift(sId) . Buffer(bt) + 
 									itemUserInKO(sId) . Buffer(bt))
 		+
-    	(bt == output) -> (itemUserOutOK(sId) . rcvItemBufferFromLift(sId) . itemUserOut(sId) . Buffer(bt) +
+    	(bt == output) -> (itemUserOutOK(sId) . rcvItemBufferFromLift(sId) . Buffer(bt) +
 									itemUserOutKO(sId) . Buffer(bt))
 	);
+
 % SCANNER CONTROLLER
 act scanTicket: SlotId;
 	sendItemCollectReq: SlotId;
 	rcvItemCollectOK, rcvItemCollectKO: SlotId;
-    ticketOK: SlotId; % valid ticket presented
-    ticketKO: SlotId; % invaldi ticket presented;
 
 proc Scanner = 
-    sum sId: SlotId . scanTicket(sId) . sendItemCollectReq(sId) .
-        ( (rcvItemCollectOK(sId) . ticketOK(sId) . Scanner) +
-          (rcvItemCollectKO(sId) . ticketKO(sId) . Scanner));
+    sum sId: SlotId . scanTicket(sId) . sendItemCollectReq(sId) . (rcvItemCollectOK(sId) + rcvItemCollectKO(sId))  .  Scanner ;
 
 % PRINTER CONTROLLER
 act printTicket: SlotId;
@@ -89,14 +85,14 @@ proc Printer =
           (rcvItemStoreKO(sId) . Printer) );
 
 % PICKER CONTROLLER
-act rcvItemPickerFromLift, sendItemPickerToLift, rcvItemCollectCmd, rcvItemStoreCmd, storeItemToSlot, collectItemFromSlot: SlotId;
-		goToSlot: FloorId # SlotId;
+act rcvItemPickerFromLift, sendItemPickerToLift, rcvItemCollectCmd, rcvItemStoreCmd: SlotId;
+		goToSlot,  storeItemToSlot, collectItemFromSlot: FloorId # SlotId;
 		goToInputLift, goToOutputLift: FloorId;
 
 proc Picker(pId: FloorId) = 
     sum sId: SlotId . (toFloor(sId)==pId) -> (
-    		rcvItemStoreCmd(sId) . rcvItemPickerFromLift(sId) . goToSlot(pId, sId) . storeItemToSlot(sId) . goToInputLift(pId) . Picker(pId) +
-            rcvItemCollectCmd(sId) . goToSlot(pId, sId) .  collectItemFromSlot(sId) . goToOutputLift(pId) . sendItemPickerToLift(sId) . Picker(pId)
+    		rcvItemStoreCmd(sId) . goToInputLift(pId) . rcvItemPickerFromLift(sId) . goToSlot(pId, sId) . storeItemToSlot(toFloor(sId), sId) . Picker(pId) +
+            rcvItemCollectCmd(sId) . goToSlot(pId, sId) .  collectItemFromSlot(toFloor(sId), sId) . goToOutputLift(pId) . sendItemPickerToLift(sId) . Picker(pId)
 	);
 
 % STORAGE CONTROLLER
@@ -116,37 +112,42 @@ proc Storage(n: Int, slots: FSet(SlotId))  =
 			(!(sId in slots) && (n<cap)) -> sendStoreReqOK(sId) . Storage(n+1, add_item(sId, slots))
             			  <> sendStoreReqKO(sId) . Storage(n, slots)
 	);
- 
-% ----------------------TODO: EMERGENCY CONTROLLER----------------------------------------
+
 act safeTransferB2L, safeTransferL2B, safeTransferL2P, safeTransferP2L, safeStoreReq, safeCollectReq,
 		safeStore, safeNoStore, safeCollect, safeNoCollect, safePrintTicket, safeScanTicket: SlotId;
 		safeMoveLift: Direction # FloorId;
-		safePickerMove: FloorId # SlotId;
-	triggerEmergency, resetEmergency;
+		safePickerMoveToSlot, safePickerCollect, safePickerStore: FloorId # SlotId;
+		safePMoveToInLift, safePMoveToOutLift: FloorId;
+		triggerEmergency, resetEmergency;
 
 proc EmergencyHandler =
 	triggerEmergency . resetEmergency . EmergencyHandler
     +
 	sum sId: SlotId, lt: Direction . (
-		(safeTransferB2L(sId) + safeTransferL2B(sId) +	safeTransferL2P(sId) + safeTransferP2L(sId) +
-			safeStoreReq(sId) + safeCollectReq(sId) +	safeStore(sId) + safeCollect(sId) +  safeNoStore(sId) + safeNoCollect(sId) +
-			safeMoveLift(lt, toFloor(sId)) +safeScanTicket(sId) + safePrintTicket(sId) + safePickerMove(toFloor(sId), sId))
+		(
+			safeTransferL2B(sId) +	safeTransferL2P(sId) + safeTransferP2L(sId) +
+			safeStoreReq(sId) + safeCollectReq(sId) +
+			( safeStore(sId) . safePrintTicket(sId) . safeTransferB2L(sId)) +  % this enforces that printTicket will only happen once and right after safeStore, plus the inabilty to start another storeReq with an item still inside
+			safeCollect(sId) +  safeNoStore(sId) + safeNoCollect(sId) +
+			safeMoveLift(lt, toFloor(sId)) +safeScanTicket(sId) +
+			safePickerMoveToSlot(toFloor(sId), sId)  + safePMoveToOutLift(toFloor(sId)) + safePMoveToInLift(toFloor(sId))  + safePickerCollect(toFloor(sId), sId) + safePickerStore(toFloor(sId), sId)
+		)
 		. EmergencyHandler
 	);
 
-
 act 
-	transferItemBufferToLift, transferItemLiftToPicker, transferItemLiftToBuffer, transferItemPickerToLift, collectRequest, storeRequest, ticketPrint, ticketScan: SlotId;
+	transferItemBufferToLift, transferItemLiftToPicker, transferItemLiftToBuffer, transferItemPickerToLift, collectRequest, storeRequest, ticketScan, ticketPrint: SlotId;
     moveLift: Direction # FloorId;
-	carryItem: FloorId # SlotId;
+    pickerToInputLift, pickerToOutputLift: FloorId;
+	movePickerToSlot, pickerCollectItem, pickerStoreItem: FloorId # SlotId;
 	storeOK, storeKO, collectOK, collectKO: SlotId;
 
 init
 	allow(	{ 
 			transferItemBufferToLift, transferItemLiftToPicker, transferItemLiftToBuffer, transferItemPickerToLift,
-			goToInputLift, goToOutputLift, storeItemToSlot, collectItemFromSlot, moveLift, triggerEmergency, resetEmergency,
-			storeRequest, storeOK, storeKO, collectRequest, collectOK, collectKO, ticketScan, ticketPrint, itemUserOut, ticketOK, ticketKO,
-			carryItem
+			pickerToInputLift, pickerToOutputLift, pickerStoreItem, pickerCollectItem, moveLift, triggerEmergency, resetEmergency,
+			storeRequest, storeOK, storeKO, collectRequest, collectOK, collectKO, ticketScan, ticketPrint,
+			movePickerToSlot
 		 },
 		comm( {
 				% BUFFER						| STORAGE						| LIFT									| PICKER							| PRINTER					| SCANNER						| EMERGENCY							| RESULT
@@ -163,7 +164,11 @@ init
 																									   moveToFloor																																			 	| safeMoveLift							-> moveLift,
 																																															  printTicket														 	| safePrintTicket						-> ticketPrint,
 																																																								  scanTicket					 	| safeScanTicket						-> ticketScan,
-																																				  goToSlot																										 	| safePickerMove						-> carryItem
+																																				  goToSlot																										 	| safePickerMoveToSlot			-> movePickerToSlot,
+																																				  goToInputLift																								 	| safePMoveToInLift				-> pickerToInputLift,
+																																				  goToOutputLift																							 	| safePMoveToOutLift				-> pickerToOutputLift,
+																																				  storeItemToSlot																							 	| safePickerStore						-> pickerStoreItem,
+																																				  collectItemFromSlot																					 	| safePickerCollect					-> pickerCollectItem
 				% there are missing synchronization safe actions for moving a picker to the output/input  lift, but maybe that is a design choice so that the picker goes to safety after an emergency has triggered
 			},
 			Buffer(input) || Buffer(output) || Lift(input) || Lift(output)  || Picker(f0) || Picker(f1) || Storage(0, {}) || Printer || Scanner || EmergencyHandler
