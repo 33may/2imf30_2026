@@ -1,2 +1,4 @@
+% a) A picker never places an item in an occupied slot.
+
 forall s: Slot . val(fl(s) < numFloors && sp(s) < slotsPerFloor) =>
   [ true* . transferPickerToSlot(s) . (!transferSlotToPicker(s))* . transferPickerToSlot(s) ] false

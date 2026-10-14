@@ -1,0 +1,12 @@
+% a) The printer never provides a ticket when storage is full.
+
+% b) A reserveSlotForNewItem(s), for any slot s, never happens when the number of
+%    reserveSlotForNewItem(s) actions so far (for any slot s) minus the number of
+%    transferSlotToPicker(s) actions so far (for any slot s) is greater than or equal
+%    to numSlots, the number of slots in the storage.
+
+
+nu X(n: Int = 0) .
+        [ !(exists s: Slot . reserveSlotForNewItem(s) || transferSlotToPicker(s)) ] X(n)
+    &&  [ exists s: Slot . transferSlotToPicker(s) ] X(n - 1)
+    &&  [ exists s: Slot . reserveSlotForNewItem(s) ] ( val(n < numSlots) && X(n + 1) )

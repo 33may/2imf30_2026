@@ -1,0 +1,11 @@
+% a)  When the scanner reads a valid ticket, the item at that slot is eventually delivered to the output buffer,
+%     unless an emergency occurs.
+
+% b) For any slot s, if a transferPickerToSlot(s) has happened without a transferSlotToPicker(s)
+%    in between, and then startScanTicket(s) happens, then a transferLiftToBuffer(0, outputLift)
+%    must eventually follow, unless an emeTrigger happens first.
+
+% c)
+forall s: Slot . val(fl(s) < numFloors && sp(s) < slotsPerFloor) =>
+    [ true* . transferPickerToSlot(s) . (!transferSlotToPicker(s))* . startScanTicket(s) ]
+    mu X . ( [ !(transferLiftToBuffer(0, outputLift) || emeTrigger) ] X && <true> true )
