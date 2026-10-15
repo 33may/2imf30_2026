@@ -12,6 +12,7 @@
   <property>r15_no_ticket_for_taken_slot</property>
   <property>r11_no_handover_to_picker_if_it_is_at_slot_or_lift_not_at_floor</property>
   <property>r17_no_transfer_to_out_lift_if_picker_not_at_station_or_lift_did_not_move_there</property>
+  <property>R16_valid_scanned_ticket_eventually_to_out_buffer</property>
  </properties>
  <jittyc>false</jittyc>
  <linearisation_method>regular</linearisation_method>

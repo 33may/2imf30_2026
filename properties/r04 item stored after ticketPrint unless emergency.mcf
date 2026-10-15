@@ -1,8 +1,6 @@
 % R04 An item for which a ticket was printed will eventually be stored
 forall s: SlotId .
-	nu X. (
-		[storeOK(s)]
-		mu Y. (
-			<pickerStoreItem(toFloor(s), s)>true || <true>Y
+		[true* . storeOK(s)]
+		mu X. (
+			<pickerStoreItem(toFloor(s), s)>true || <true> X
 		)
-	) && [true] X

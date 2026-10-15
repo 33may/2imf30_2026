@@ -1,0 +1,3 @@
+forall s: SlotId .
+	[true* . collectOK(s)]
+	mu X . ( <transferItemLiftToBuffer(s)>true || <true> X )
