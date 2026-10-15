@@ -2,4 +2,4 @@
 forall f: Nat . val(f < numFloors) =>
 forall n: Nat . val(n < slotsPerFloor) =>
 forall m: Nat . val(m < slotsPerFloor && m != n) =>
-    [ true* . movePickerToSlot(n) . !movePickerToSlot(m)* . transferPickerToSlot(slot(f, m)) ] false
+    [ true* . movePickerToSlot(slot(f, n)) . !movePickerToSlot(slot(f, m))* . transferPickerToSlot(slot(f, m)) ] false

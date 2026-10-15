@@ -54,13 +54,12 @@ proc Scanner = sum s: Slot . (s in AllSlots) -> scanTicket(s) . Scanner;
 proc Printer = sum s: Slot . (s in AllSlots) -> printTicket(s) . Printer;
 
 act pickerGoToLift, pickerItemToLift, pickerItemFromLift : Nat # LiftType; % floor nr x lift
-    pickerGoToSlot : Nat;
-    pickerItemToSlot, pickerItemFromSlot : Slot;
+    pickerGoToSlot, pickerItemToSlot, pickerItemFromSlot : Slot;
 
 proc Picker(F: Nat, I: Item, L: PickerLoc) =
     pickerGoToLift(F, outputLift) . Picker(F, I, atLift(outputLift))
     + pickerGoToLift(F, inputLift) . Picker(F, I, atLift(inputLift))
-    + sum S: Nat . (S < slotsPerFloor) -> pickerGoToSlot(S) . Picker(F, I, atSlot(S))
+    + sum S: Nat . (S < slotsPerFloor) -> pickerGoToSlot(slot(F, S)) . Picker(F, I, atSlot(S))
     + isAtSlot(L) -> (
         (I == hasItem) -> pickerItemToSlot(slot(F, slotNr(L))) . Picker(F, noItem, L)
                        <> pickerItemFromSlot(slot(F, slotNr(L))) . Picker(F, hasItem, L)
@@ -110,12 +109,12 @@ proc Storage(st: Storage) =
 
 act emeTrigger, emeReset;
     safeLiftGoToFloor : Nat # LiftType;
-    safePickerGoToSlot : Nat;
+    safePickerGoToSlot : Slot;
     safePickerGoToLift : Nat # LiftType;
 
 proc EmergencyController = emeTrigger . emeReset . EmergencyController +
     sum f: Nat . (f < numFloors) -> sum l: LiftType . safeLiftGoToFloor(f, l) . EmergencyController +
-    sum n: Nat . (n < slotsPerFloor) -> safePickerGoToSlot(n) . EmergencyController +
+    sum s: Slot . (s in AllSlots) -> safePickerGoToSlot(s) . EmergencyController +
     sum f: Nat . (f < numFloors) -> sum l: LiftType . safePickerGoToLift(f, l) . EmergencyController;
 
 act startPress;
@@ -131,7 +130,7 @@ act startPress;
 
     transferPickerToSlot, transferSlotToPicker : Slot;
 
-    movePickerToSlot : Nat;
+    movePickerToSlot : Slot;
     movePickerToLift : Nat # LiftType;
 
     moveLift : Nat # LiftType;
