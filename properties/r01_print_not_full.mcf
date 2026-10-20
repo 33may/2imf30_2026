@@ -1,0 +1,7 @@
+% R01. When the start button is pressed with an item in the input buffer and storage is not full,
+%      the printer eventually provides a ticket.
+
+% storeRequest is the equivalent of a start button press 
+forall s : SlotId . 
+    [ true* . storeRequest(s) . storeOK(s) ]
+        mu Z . ( <ticketPrint(s)>true || [true]Z )
