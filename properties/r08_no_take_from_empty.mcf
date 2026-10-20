@@ -1,4 +1,10 @@
+% a) A picker never attempts to pick up an item from an empty slot.
+
+% b) For every slot s, a pickerCollectItem(s) never happens before the first
+%    pickerStoreItem(s), and two pickerCollectItem(s) never happen without a
+%    pickerStoreItem(s) in between.
+
+% c)
 forall s: SlotId .
-	[ (!pickerStoreItem(toFloor(s),s))* . pickerCollectItem(toFloor(s), s) ] false
-    &&
-	[ true* . pickerCollectItem(toFloor(s),s) . (!pickerStoreItem(toFloor(s),s))* . pickerCollectItem(toFloor(s),s) ] false
+     [ (!pickerStoreItem(toFloor(s), s))* . pickerCollectItem(toFloor(s), s) ] false
+  && [ true* . pickerCollectItem(toFloor(s), s) . (!pickerStoreItem(toFloor(s), s))* . pickerCollectItem(toFloor(s), s) ] false

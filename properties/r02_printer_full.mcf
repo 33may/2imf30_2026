@@ -1,0 +1,11 @@
+% a) The storage never accepts a new item when it is full.
+
+% b) For the counter X with data n = 0: n stays the same when an action different
+%    from collectOK or storeOK happens, n decreases by 1 when collectOK happens,
+%    and n increases only when n is smaller than the capacity and storeOK happens.
+
+% c)
+nu X(n: Int = 0) .
+        [ !(exists s: SlotId . storeOK(s) || collectOK(s)) ] X(n)
+    &&  [ exists s: SlotId . collectOK(s) ] X(n - 1)
+    &&  [ exists s: SlotId . storeOK(s) ] ( val(n < cap) && X(n + 1) )

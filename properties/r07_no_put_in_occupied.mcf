@@ -1,2 +1,8 @@
-forall s: SlotId . 
-  [ true* . pickerStoreItem(toFloor(s),s) . (!pickerCollectItem(toFloor(s),s))* . pickerStoreItem(toFloor(s),s) ] false
+% a) A picker never places an item in an occupied slot.
+
+% b) For every slot s, a pickerStoreItem(s) never happens when an earlier
+%    pickerStoreItem(s) has happened without a pickerCollectItem(s) in between.
+
+% c)
+forall s: SlotId .
+  [ true* . pickerStoreItem(toFloor(s), s) . (!pickerCollectItem(toFloor(s), s))* . pickerStoreItem(toFloor(s), s) ] false

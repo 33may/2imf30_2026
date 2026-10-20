@@ -1,3 +1,18 @@
+% a) When the scanner reads a valid ticket, the item in the slot on that ticket is
+%    eventually delivered to the output buffer, unless an emergency occurs.
+
+% b) After collectOK(s), eventually transferItemLiftToBuffer(s) or triggerEmergency
+%    happens, unless only rejected requests (storeRequest, storeKO, collectRequest,
+%    collectKO, ticketScan) repeat forever.
+
+% c)
 forall s: SlotId .
-	[true* . collectOK(s)]
-	mu X . ( <transferItemLiftToBuffer(s)>true || <true> X )
+  [ true* . collectOK(s) ]
+    mu X . nu Y . (
+          [ !( transferItemLiftToBuffer(s) || triggerEmergency
+             || exists t: SlotId . storeRequest(t) || storeKO(t) || ticketScan(t)
+                                   || collectRequest(t) || collectKO(t) ) ] X
+      &&  [ exists t: SlotId . storeRequest(t) || storeKO(t) || ticketScan(t)
+                               || collectRequest(t) || collectKO(t) ] Y
+      &&  <true> true
+    )
