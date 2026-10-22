@@ -1,1 +1,5 @@
 artefacts
+*.lts
+*.lps
+*.aut
+*.pbes
