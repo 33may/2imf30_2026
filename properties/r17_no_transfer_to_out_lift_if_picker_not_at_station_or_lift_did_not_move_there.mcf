@@ -1,2 +1,6 @@
 %r R17 no transfer of an item happens between the picker and the output lift if the picker has not moved to the collect station and the lift has not gone to the correct floor
  
+forall s: SlotId .
+		val(toFloor(s) == f0) => [!pickerToOutputLift(toFloor(s))* . transferItemPickerToLift(s)] false
+		&&
+        val(toFloor(s) != f0) => [!moveLift(output, toFloor(s)) . !pickerToOutputLift(toFloor(s))* . transferItemPickerToLift(s)] false

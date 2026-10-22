@@ -1,0 +1,2 @@
+forall s: SlotId .
+  [ true* . storeOK(s) . (!pickerCollectItem(toFloor(s), s))* . storeOK(s) ] false

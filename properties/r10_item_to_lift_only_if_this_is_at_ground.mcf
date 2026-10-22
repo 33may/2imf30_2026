@@ -1,0 +1,7 @@
+% case 1: no previous store: transfer directly
+% case2: store to f0 -> lift is already at ground floor
+% case3: previous store to !f0 -> lift goes back to ground floor after delivering
+forall s: SlotId.
+	[ true* . !storeOK(s) . !moveLift(input, toFloor(s))* . transferItemBufferToLift(s) ] true
+	||
+    [true* . moveLift(input, f1) . true* . moveLift(input, f0) . true* . transferItemBufferToLift(s) ] true

@@ -1,0 +1,6 @@
+% R04 An item for which a ticket was printed will eventually be stored
+forall s: SlotId .
+		[true* . storeOK(s)]
+		mu X. nu Y (
+			[!(triggerEmergency.resetEmergency || pickerStoreItem(toFloor(s), s))]X || <true* . pickerStoreItem(toFloor(s), s)> true
+		)

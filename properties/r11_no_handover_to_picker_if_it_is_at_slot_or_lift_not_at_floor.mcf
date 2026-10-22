@@ -1,3 +1,7 @@
+% case 1: picker needs to move to input lift anyway, lift at right floor already if f0
+% case 2: picker needs to move to input lift anyway, lift goes to the right floor
+
 forall s: SlotId .
-		[!moveLift(input,toFloor(s))* . transferItemLiftToPicker(s)] false
-		||  [!pickerToInputLift(toFloor(s))* . transferItemLiftToPicker(s)] false
+		val(toFloor(s) == f0) => [!pickerToInputLift(toFloor(s))* . transferItemLiftToPicker(s)] false
+		&&
+        val(toFloor(s) != f0) => [!moveLift(input, toFloor(s)) . !pickerToInputLift(toFloor(s))* . transferItemLiftToPicker(s)] false

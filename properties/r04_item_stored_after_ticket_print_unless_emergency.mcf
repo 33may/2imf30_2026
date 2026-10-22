@@ -2,5 +2,5 @@
 forall s: SlotId .
 		[true* . storeOK(s)]
 		mu X. (
-			<pickerStoreItem(toFloor(s), s)>true || <true> X
+			[!pickerStoreItem(toFloor(s), s)]X || <true* . pickerStoreItem(toFloor(s), s)> true
 		)

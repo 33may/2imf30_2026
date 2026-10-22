@@ -1,0 +1,7 @@
+% R13. After receiving an item, the picker eventually places it in the slot assigned to that item, unless an emergency occurs.
+forall s : SlotId . 
+    [ true* . storeOK(s) 
+		. !transferItemLiftToPicker(s)*
+		. transferItemLiftToPicker(s) ]
+    < !pickerStoreItem(toFloor(s), s)*
+        . pickerStoreItem(toFloor(s),s) > true
